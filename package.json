@@ -1,0 +1,79 @@
+{
+  "name": "antigravity-context-monitor",
+  "displayName": "Antigravity 上下文监控器",
+  "description": "实时监控 VS Code Antigravity AI Agent 对话上下文 Token 占用与剩余量，支持状态栏显示、过载预警及一键压缩",
+  "version": "1.0.0",
+  "publisher": "antigravity-community",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other",
+    "AI",
+    "Productivity"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onView:antigravity.panel",
+    "*"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "antigravity-context.menu",
+        "title": "Antigravity: 打开上下文管理菜单"
+      },
+      {
+        "command": "antigravity-context.refresh",
+        "title": "Antigravity: 刷新上下文用量"
+      },
+      {
+        "command": "antigravity-context.showDetails",
+        "title": "Antigravity: 查看上下文详细指标"
+      },
+      {
+        "command": "antigravity-context.copyCompact",
+        "title": "Antigravity: 复制 /compact 压缩指令"
+      },
+      {
+        "command": "antigravity-context.openLog",
+        "title": "Antigravity: 打开对话日志"
+      },
+      {
+        "command": "antigravity-context.openFolder",
+        "title": "Antigravity: 打开会话数据目录"
+      }
+    ],
+    "configuration": {
+      "title": "Antigravity Context Monitor",
+      "properties": {
+        "antigravityContext.displayMode": {
+          "type": "string",
+          "enum": [
+            "percentageAndTokens",
+            "percentageOnly",
+            "tokensOnly"
+          ],
+          "default": "percentageAndTokens",
+          "description": "状态栏上下文显示样式：百分比与Token (14.5% [145k/1M])、仅百分比 (14.5%) 或仅Token (145k/1M)"
+        },
+        "antigravityContext.refreshInterval": {
+          "type": "number",
+          "default": 2000,
+          "description": "后台自动侦测新会话与更新的轮询间隔（毫秒）"
+        },
+        "antigravityContext.warningThreshold": {
+          "type": "number",
+          "default": 75,
+          "description": "上下文黄色警告用量阈值（%）"
+        },
+        "antigravityContext.criticalThreshold": {
+          "type": "number",
+          "default": 85,
+          "description": "上下文红色严重过载用量阈值（%）"
+        }
+      }
+    }
+  }
+}
