@@ -1,7 +1,7 @@
 # Antigravity 上下文监控与一键压缩器 (Context Monitor)
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.0-blue.svg?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.0.3-blue.svg?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/VS%20Code-%3E%3D%201.80.0-007ACC?style=flat-square&logo=visual-studio-code" alt="VS Code">
   <img src="https://img.shields.io/badge/Antigravity-1.13.0+-green.svg?style=flat-square" alt="Antigravity">
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="License">
@@ -57,14 +57,14 @@
 
 ### 方式一：下载 VSIX 一键安装（推荐）
 
-1. 在 GitHub 本仓库右侧 **[Releases](../../releases/latest)** 中下载最新版本的 `antigravity-context-monitor-1.0.0.vsix`；
+1. 在 GitHub 本仓库右侧 **[Releases](../../releases/latest)** 中下载最新版本的 `antigravity-context-monitor-1.0.3.vsix`；
 2. 打开 VS Code，按下快捷键 `Ctrl + Shift + X` 打开“扩展”面板；
 3. 点击扩展面板右上角的 `···`（更多操作）菜单，选择 **“从 VSIX 安装...”**（Install from VSIX...），选中下载的文件即可完成安装；
 4. 按 `Ctrl + Shift + P` 输入 `Developer: Reload Window`（重新加载窗口）刷新生效！
 
 > 💡 **终端快速安装**：
 > ```bash
-> code --install-extension antigravity-context-monitor-1.0.0.vsix --force
+> code --install-extension antigravity-context-monitor-1.0.3.vsix --force
 > ```
 
 ### 方式二：从源码编译打包
@@ -72,9 +72,25 @@
 ```bash
 git clone https://github.com/zhqin01/antigravity-context-monitor.git
 cd antigravity-context-monitor
-npx @vscode/vsce package --no-dependencies
-code --install-extension antigravity-context-monitor-1.0.0.vsix --force
+npx @vscode/vsce package --no-git-tag-version
+code --install-extension antigravity-context-monitor-1.0.3.vsix --force
 ```
+
+---
+
+## 📝 更新日志
+
+### v1.0.3 (最新)
+- 🔄 **会话与状态栏实时强同步**：彻底解决切换历史会话或新建空白会话时，VS Code 最底部状态栏不同步刷新的问题，实现输入框胶囊与底部状态栏双向毫秒级联动。
+- 📐 **弹窗自适应边缘防裁剪**：新增靠右边界感知与锚定逻辑，彻底解决卡片右侧溢出、被滚动条裁剪以及关闭/刷新按钮截断的问题。
+- 🎨 **弹性布局优化**：增强长模型名称自适应截断与按钮固定尺寸保护，各类窄屏侧边栏下显示均完整清晰。
+
+### v1.0.2
+- 🎯 **多会话精准绑定**：支持 React 18 Fiber 状态穿透、DOM 级级联侦测与侧边栏即时点击感知，会话切换无缝捕捉。
+- 🆕 **新会话零状态支持**：新建空白对话时清爽展示 `0.0% (0/1M)`。
+
+### v1.0.0
+- 🎉 首次正式发布，支持输入框常驻胶囊、暗色详情卡片、一键 `/compact` 智能压缩与底部状态栏双显。
 
 ---
 
