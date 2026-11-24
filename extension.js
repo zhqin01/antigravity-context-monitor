@@ -110,13 +110,33 @@ class AntigravityContextMonitor {
         if (item.startsWith('google.google-antigravity')) {
           const runtimePath = path.join(extDir, item, 'agy-i18n-runtime.js');
           if (fs.existsSync(runtimePath)) {
-            const content = fs.readFileSync(runtimePath, 'utf8');
-            if (!content.includes('initAntigravityContextBadge')) {
-              const badgePath = path.join(__dirname, 'runtime-badge.js');
-              if (fs.existsSync(badgePath)) {
-                const snippet = fs.readFileSync(badgePath, 'utf8');
-                fs.appendFileSync(runtimePath, '\n' + snippet, 'utf8');
-                console.log('[AntigravityContextMonitor] Webview 上下文胶囊代码已自动注入至:', runtimePath);
+            const badgePath = path.join(__dirname, 'runtime-badge.js');
+            if (fs.existsSync(badgePath)) {
+              const badgeContent = fs.readFileSync(badgePath, 'utf8');
+              const currentContent = fs.readFileSync(runtimePath, 'utf8');
+
+              const startMarker = '/* ANTIGRAVITY_CONTEXT_MONITOR_START */';
+              const endMarker = '/* ANTIGRAVITY_CONTEXT_MONITOR_END */';
+              const wrappedSnippet = `${startMarker}\n${badgeContent}\n${endMarker}`;
+
+              if (currentContent.includes(startMarker) && currentContent.includes(endMarker)) {
+                const sIdx = currentContent.indexOf(startMarker);
+                const eIdx = currentContent.indexOf(endMarker) + endMarker.length;
+                const before = currentContent.substring(0, sIdx);
+                const after = currentContent.substring(eIdx);
+                fs.writeFileSync(runtimePath, before + wrappedSnippet + after, 'utf8');
+                console.log('[AntigravityContextMonitor] Webview 上下文胶囊代码已平滑更新至最新版本');
+              } else {
+                const legacyIdx = currentContent.indexOf('initAntigravityContextBadge');
+                if (legacyIdx > -1) {
+                  const commentIdx = currentContent.lastIndexOf('/**', legacyIdx);
+                  const cleanBase = commentIdx > -1 ? currentContent.substring(0, commentIdx).trimEnd() : currentContent.substring(0, legacyIdx).trimEnd();
+                  fs.writeFileSync(runtimePath, cleanBase + '\n\n' + wrappedSnippet + '\n', 'utf8');
+                  console.log('[AntigravityContextMonitor] Webview 上下文胶囊代码已清理旧版并注入新版');
+                } else {
+                  fs.appendFileSync(runtimePath, '\n\n' + wrappedSnippet + '\n', 'utf8');
+                  console.log('[AntigravityContextMonitor] Webview 上下文胶囊代码已注入');
+                }
               }
             }
           }
@@ -181,7 +201,7 @@ class AntigravityContextMonitor {
 
           if (!responseData) {
             responseData = {
-              convId: 'new',
+              convId: requestedConvId || 'new',
               model: 'Gemini 3.8 Flash',
               totalContext: 0,
               maxLimit: 1048576,
@@ -194,6 +214,9 @@ class AntigravityContextMonitor {
               timestamp: new Date().toISOString()
             };
           }
+
+          // 核心机制：当 Webview 汇报或查询任意会话时，实时同步更新 VS Code 底部状态栏与活跃监控
+          this.syncActiveConversationState(responseData);
 
           res.writeHead(200, headers);
           res.end(JSON.stringify(responseData));
@@ -227,6 +250,37 @@ class AntigravityContextMonitor {
       });
     } catch (err) {
       console.warn('[AntigravityContextMonitor] 启动本地 HTTP 服务失败:', err);
+    }
+  }
+
+  /**
+   * 与当前活跃会话状态强同步
+   * 当 Webview 轮询或侦测到用户切换会话时，第一时间更新底层的状态栏项及文件监听
+   */
+  syncActiveConversationState(data) {
+    if (!data) return;
+
+    const isConvChanged = (data.convId !== this.currentConvId);
+    const isTokensChanged = (!this.currentData || data.totalContext !== this.currentData.totalContext || data.percent !== this.currentData.percent);
+
+    if (isConvChanged || isTokensChanged) {
+      this.currentData = data;
+      this.currentConvId = data.convId;
+
+      if (data.convId && data.convId !== 'new') {
+        const transcriptPath = path.join(this.brainDir, data.convId, '.system_generated', 'logs', 'transcript.jsonl');
+        if (fs.existsSync(transcriptPath)) {
+          this.currentTranscriptPath = transcriptPath;
+          this.setupFileWatcher(transcriptPath);
+        } else {
+          this.currentTranscriptPath = null;
+        }
+      } else {
+        this.currentTranscriptPath = null;
+      }
+
+      this.renderStatusBar();
+      this.checkAlerts();
     }
   }
 
@@ -325,7 +379,7 @@ class AntigravityContextMonitor {
       }
 
       const maxLimit = getModelLimit(tokenData.model);
-      const totalContext = (tokenData.inputTokens || 0) + (tokenData.cacheTokens || 0) + (tokenData.outputTokens || 0);
+      const totalContext = (tokenData.inputTokens || 0) + (tokenData.cacheTokens || 0);
       const percent = maxLimit > 0 ? (totalContext / maxLimit) * 100 : 0;
       const remaining = Math.max(0, maxLimit - totalContext);
 
@@ -494,34 +548,46 @@ class AntigravityContextMonitor {
     const warningThreshold = config.get('warningThreshold', 75);
     const criticalThreshold = config.get('criticalThreshold', 85);
 
-    const { percent, totalContext, maxLimit, remaining, inputTokens, cacheTokens, outputTokens, model, convId } = this.currentData;
+    const { percent, totalContext, maxLimit, remaining, inputTokens, cacheTokens, outputTokens, model, convId, isNew } = this.currentData;
 
-    const percentStr = percent.toFixed(1) + '%';
+    const percentStr = (percent || 0).toFixed(1) + '%';
     const totalStr = formatTokens(totalContext);
     const limitStr = formatTokens(maxLimit);
 
     let icon = '$(dashboard)';
     let statusDesc = '🟢 充裕 (安全)';
 
-    if (percent >= criticalThreshold) {
-      icon = '$(error)';
-      this.statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
-      statusDesc = '🔴 极度拥挤 (强烈建议使用 /compact 压缩)';
-    } else if (percent >= warningThreshold) {
-      icon = '$(warning)';
-      this.statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
-      statusDesc = '🟡 偏高 (建议在适当时机进行压缩)';
-    } else {
+    if (isNew || totalContext === 0) {
       this.statusBarItem.backgroundColor = undefined;
-    }
-
-    // 格式化状态栏文本
-    if (displayMode === 'percentageOnly') {
-      this.statusBarItem.text = `${icon} ${percentStr}`;
-    } else if (displayMode === 'tokensOnly') {
-      this.statusBarItem.text = `${icon} ${totalStr}/${limitStr}`;
+      statusDesc = '🟢 准备就绪 (新会话)';
+      if (displayMode === 'percentageOnly') {
+        this.statusBarItem.text = `${icon} 0.0%`;
+      } else if (displayMode === 'tokensOnly') {
+        this.statusBarItem.text = `${icon} 0/${limitStr}`;
+      } else {
+        this.statusBarItem.text = `${icon} 上下文: 0.0% (0/${limitStr})`;
+      }
     } else {
-      this.statusBarItem.text = `${icon} 上下文: ${percentStr} (${totalStr}/${limitStr})`;
+      if (percent >= criticalThreshold) {
+        icon = '$(error)';
+        this.statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
+        statusDesc = '🔴 极度拥挤 (强烈建议使用 /compact 压缩)';
+      } else if (percent >= warningThreshold) {
+        icon = '$(warning)';
+        this.statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+        statusDesc = '🟡 偏高 (建议在适当时机进行压缩)';
+      } else {
+        this.statusBarItem.backgroundColor = undefined;
+      }
+
+      // 格式化状态栏文本
+      if (displayMode === 'percentageOnly') {
+        this.statusBarItem.text = `${icon} ${percentStr}`;
+      } else if (displayMode === 'tokensOnly') {
+        this.statusBarItem.text = `${icon} ${totalStr}/${limitStr}`;
+      } else {
+        this.statusBarItem.text = `${icon} 上下文: ${percentStr} (${totalStr}/${limitStr})`;
+      }
     }
 
     // 进度条渲染
@@ -533,9 +599,11 @@ class AntigravityContextMonitor {
     md.isTrusted = true;
     md.supportHtml = true;
 
+    const convTitle = (isNew || convId === 'new') ? '新会话 (准备就绪)' : (convId ? convId.substring(0, 16) + '...' : '当前会话');
+
     md.appendMarkdown(`### 🧠 Antigravity 对话上下文监控\n\n`);
-    md.appendMarkdown(`**当前会话**: \`${convId ? convId.substring(0, 16) + '...' : '未知'}\`\n\n`);
-    md.appendMarkdown(`**活跃模型**: \`${model}\`  *(上限: ${limitStr} Tokens)*\n\n`);
+    md.appendMarkdown(`**当前会话**: \`${convTitle}\`\n\n`);
+    md.appendMarkdown(`**活跃模型**: \`${model || 'Gemini 3.8 Flash'}\`  *(上限: ${limitStr} Tokens)*\n\n`);
     md.appendMarkdown(`---\n\n`);
 
     md.appendMarkdown(`| 维度指标 | 数值统计 | 说明占比 |\n`);

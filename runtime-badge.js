@@ -146,27 +146,32 @@
     if (!pill || !popover) return;
 
     const pillRect = pill.getBoundingClientRect();
-    const windowWidth = window.innerWidth;
-    const windowHeight = window.innerHeight;
+    const docWidth = document.documentElement.clientWidth || window.innerWidth;
+    const docHeight = window.innerHeight;
 
-    const popoverWidth = Math.min(295, windowWidth - 16);
+    // 详情卡片自适应宽度：优先 295px，若视口极小则自适应收缩
+    const popoverWidth = Math.min(295, Math.max(260, docWidth - 20));
 
-    let targetLeft = pillRect.left;
-    if (targetLeft + popoverWidth > windowWidth - 8) {
-      targetLeft = windowWidth - popoverWidth - 8;
-    }
-    if (targetLeft < 8) {
-      targetLeft = 8;
-    }
-
-    const bottomOffset = Math.max(8, windowHeight - pillRect.top + 8);
+    // 计算是否贴近视口右侧边缘
+    const isNearRight = (pillRect.left + popoverWidth > docWidth - 12);
 
     popover.style.position = 'fixed';
-    popover.style.left = Math.round(targetLeft) + 'px';
-    popover.style.bottom = Math.round(bottomOffset) + 'px';
     popover.style.width = Math.round(popoverWidth) + 'px';
     popover.style.maxWidth = 'calc(100vw - 16px)';
     popover.style.boxSizing = 'border-box';
+    popover.style.zIndex = '99999';
+
+    if (isNearRight) {
+      // 靠右或空间狭窄时，直接以视口右边界锚定 12px，彻底防止右侧溢出或内容被截断
+      popover.style.left = 'auto';
+      popover.style.right = '12px';
+    } else {
+      popover.style.right = 'auto';
+      popover.style.left = Math.max(8, Math.round(pillRect.left)) + 'px';
+    }
+
+    const bottomOffset = Math.max(10, docHeight - pillRect.top + 8);
+    popover.style.bottom = Math.round(bottomOffset) + 'px';
   }
 
   function togglePopover() {
@@ -189,8 +194,8 @@
     }
 
     renderPopoverContent(popover, lastData);
-    updatePopoverPosition();
     popover.style.display = 'block';
+    updatePopoverPosition();
     isPopoverOpen = true;
 
     popover.style.opacity = '0';
@@ -257,44 +262,44 @@
     popover.innerHTML = `
       <!-- 顶部标题栏 -->
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 9px; padding-bottom: 7px; border-bottom: 1px solid rgba(255,255,255,0.08);">
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <span style="font-size: 13px;">🧠</span>
-          <span style="font-weight: 600; font-size: 12.5px; color: #f8fafc; letter-spacing: -0.2px;">上下文用量详情</span>
-          <span style="font-size: 10px; padding: 1px 6px; border-radius: 8px; background: ${statusBg}; color: ${statusColor}; font-weight: 500;">${statusText}</span>
+        <div style="display: flex; align-items: center; gap: 6px; min-width: 0;">
+          <span style="font-size: 13px; flex-shrink: 0;">🧠</span>
+          <span style="font-weight: 600; font-size: 12.5px; color: #f8fafc; letter-spacing: -0.2px; white-space: nowrap;">上下文用量详情</span>
+          <span style="font-size: 10px; padding: 1px 6px; border-radius: 8px; background: ${statusBg}; color: ${statusColor}; font-weight: 500; white-space: nowrap; flex-shrink: 0;">${statusText}</span>
         </div>
-        <div id="agy-popover-close-btn" style="cursor: pointer; opacity: 0.6; font-size: 15px; padding: 0 4px; line-height: 1; transition: opacity 0.2s;">&times;</div>
+        <div id="agy-popover-close-btn" style="cursor: pointer; opacity: 0.6; font-size: 16px; padding: 0 4px; line-height: 1; transition: opacity 0.2s; flex-shrink: 0;" title="关闭">&times;</div>
       </div>
 
       <!-- 模型与会话状态 -->
-      <div style="display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; color: #94a3b8; margin-bottom: 3px;">
-        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 175px;">模型: <strong style="color: #f1f5f9; font-weight: 500;">${modelClean}</strong></span>
-        <span style="white-space: nowrap;">已用: <strong style="color: ${statusColor}; font-weight: 600;">${isNew ? '0.0%' : pctStr}</strong></span>
+      <div style="display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; color: #94a3b8; margin-bottom: 3px; gap: 8px;">
+        <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">模型: <strong style="color: #f1f5f9; font-weight: 500;">${modelClean}</strong></span>
+        <span style="flex-shrink: 0; white-space: nowrap;">已用: <strong style="color: ${statusColor}; font-weight: 600;">${isNew ? '0.0%' : pctStr}</strong></span>
       </div>
-      <div style="display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: #64748b; margin-bottom: 6px;">
-        <span>会话: <strong style="color: #94a3b8; font-weight: 400;">${convIdDisplay}</strong></span>
-        ${isNew ? '<span style="color: #10b981; font-weight: 500;">准备就绪</span>' : ''}
+      <div style="display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: #64748b; margin-bottom: 6px; gap: 8px;">
+        <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">会话: <strong style="color: #94a3b8; font-weight: 400;">${convIdDisplay}</strong></span>
+        ${isNew ? '<span style="color: #10b981; font-weight: 500; flex-shrink: 0;">准备就绪</span>' : ''}
       </div>
 
       <!-- 进度条 -->
-      <div style="width: 100%; height: 5px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; margin-bottom: 11px;">
+      <div style="width: 100%; height: 5px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; margin-bottom: 10px;">
         <div style="width: ${Math.min(100, percent)}%; height: 100%; background: ${barColor}; border-radius: 3px; transition: width 0.3s ease;"></div>
       </div>
 
       <!-- 2x2 指标卡片 -->
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 11px;">
-        <div style="background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.07); border-radius: 6px; padding: 5px 8px;">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px;">
+        <div style="background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.07); border-radius: 6px; padding: 5px 8px; min-width: 0;">
           <div style="font-size: 10px; color: #94a3b8; margin-bottom: 2px;">⚡ Prompt 缓存</div>
           <div style="font-size: 12px; font-weight: 600; color: #10b981; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${formatK(data.cacheTokens)} <span style="font-size: 9.5px; color: #64748b; font-weight: 400;">(${cacheHitRate})</span></div>
         </div>
-        <div style="background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.07); border-radius: 6px; padding: 5px 8px;">
+        <div style="background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.07); border-radius: 6px; padding: 5px 8px; min-width: 0;">
           <div style="font-size: 10px; color: #94a3b8; margin-bottom: 2px;">🛡️ 剩余可用量</div>
           <div style="font-size: 12px; font-weight: 600; color: #38bdf8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${formatK(data.remaining)} <span style="font-size: 9.5px; color: #64748b; font-weight: 400;">Tokens</span></div>
         </div>
-        <div style="background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.07); border-radius: 6px; padding: 5px 8px;">
+        <div style="background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.07); border-radius: 6px; padding: 5px 8px; min-width: 0;">
           <div style="font-size: 10px; color: #94a3b8; margin-bottom: 2px;">📥 未缓存输入</div>
           <div style="font-size: 12px; font-weight: 600; color: #f1f5f9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${inputFormatted}</div>
         </div>
-        <div style="background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.07); border-radius: 6px; padding: 5px 8px;">
+        <div style="background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.07); border-radius: 6px; padding: 5px 8px; min-width: 0;">
           <div style="font-size: 10px; color: #94a3b8; margin-bottom: 2px;">📤 最新模型输出</div>
           <div style="font-size: 12px; font-weight: 600; color: #f1f5f9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${outputFormatted}</div>
         </div>
@@ -302,10 +307,10 @@
 
       <!-- 底部操作按钮 -->
       <div style="display: flex; gap: 6px; margin-top: 1px;">
-        <button id="agy-popover-compact-btn" style="flex: 1; background: #2563eb; color: #ffffff; border: none; border-radius: 6px; padding: 6px 8px; font-size: 11px; font-weight: 500; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; transition: background 0.15s ease; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-          ⚡ 自动压缩会话 (/compact)
+        <button id="agy-popover-compact-btn" style="flex: 1; min-width: 0; background: #2563eb; color: #ffffff; border: none; border-radius: 6px; padding: 6px 8px; font-size: 11px; font-weight: 500; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; transition: background 0.15s ease; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+          ⚡ 自动压缩 (/compact)
         </button>
-        <button id="agy-popover-refresh-btn" style="background: rgba(255,255,255,0.07); color: #cbd5e1; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 6px 9px; font-size: 11px; cursor: pointer; transition: background 0.15s ease; white-space: nowrap;">
+        <button id="agy-popover-refresh-btn" style="flex-shrink: 0; background: rgba(255,255,255,0.07); color: #cbd5e1; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 6px 9px; font-size: 11px; cursor: pointer; transition: background 0.15s ease; white-space: nowrap;">
           🔄 刷新
         </button>
       </div>
