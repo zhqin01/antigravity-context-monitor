@@ -4,6 +4,10 @@
   "description": "实时监控 VS Code Antigravity AI Agent 对话上下文 Token 占用与剩余量，支持状态栏显示、过载预警及一键压缩",
   "version": "1.0.0",
   "publisher": "antigravity-community",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zhqin01/antigravity-context-monitor.git"
+  },
   "engines": {
     "vscode": "^1.80.0"
   },
