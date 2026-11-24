@@ -219,8 +219,10 @@
     const pctStr = percent.toFixed(1) + '%';
     const inputFormatted = (data.inputTokens || 0).toLocaleString();
     const outputFormatted = (data.outputTokens || 0).toLocaleString();
+    const isNew = data.isNew || data.totalContext === 0;
     const cacheHitRate = data.totalContext > 0 ? ((data.cacheTokens / data.totalContext) * 100).toFixed(1) + '%' : '0%';
     const modelClean = formatModelName(data.model);
+    const convIdDisplay = isNew || data.convId === 'new' ? '新会话 (无消耗)' : (data.convId ? data.convId.substring(0, 8) + '...' : '当前会话');
 
     let statusText = '空间充裕';
     let statusColor = '#10b981';
@@ -263,10 +265,14 @@
         <div id="agy-popover-close-btn" style="cursor: pointer; opacity: 0.6; font-size: 15px; padding: 0 4px; line-height: 1; transition: opacity 0.2s;">&times;</div>
       </div>
 
-      <!-- 模型与窗口总额 -->
-      <div style="display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; color: #94a3b8; margin-bottom: 5px;">
+      <!-- 模型与会话状态 -->
+      <div style="display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; color: #94a3b8; margin-bottom: 3px;">
         <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 175px;">模型: <strong style="color: #f1f5f9; font-weight: 500;">${modelClean}</strong></span>
-        <span style="white-space: nowrap;">已用: <strong style="color: ${statusColor}; font-weight: 600;">${pctStr}</strong></span>
+        <span style="white-space: nowrap;">已用: <strong style="color: ${statusColor}; font-weight: 600;">${isNew ? '0.0%' : pctStr}</strong></span>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: #64748b; margin-bottom: 6px;">
+        <span>会话: <strong style="color: #94a3b8; font-weight: 400;">${convIdDisplay}</strong></span>
+        ${isNew ? '<span style="color: #10b981; font-weight: 500;">准备就绪</span>' : ''}
       </div>
 
       <!-- 进度条 -->
@@ -463,7 +469,8 @@
     const limitStr = formatK(data.maxLimit);
     const pctStr = percent.toFixed(1) + '%';
 
-    const dashoffset = (40.84 * (1 - Math.min(1, percent / 100))).toFixed(1);
+    const isNew = data.isNew || data.totalContext === 0;
+    const dashoffset = isNew ? '40.84' : (40.84 * (1 - Math.min(1, percent / 100))).toFixed(1);
     const svgIcon = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" style="flex-shrink: 0; vertical-align: middle;"><circle cx="8" cy="8" r="6.5" stroke="' + iconColor + '" stroke-width="1.8" stroke-dasharray="40.84" stroke-dashoffset="' + dashoffset + '" stroke-linecap="round" transform="rotate(-90 8 8)"/><circle cx="8" cy="8" r="2" fill="' + iconColor + '"/></svg>';
 
     let badgeText = pill.querySelector('#agy-pill-text');
@@ -475,7 +482,7 @@
       badgeText.style.gap = '4px';
       pill.appendChild(badgeText);
     }
-    badgeText.innerHTML = svgIcon + '<span style="letter-spacing: -0.2px;">' + pctStr + '</span><span style="opacity: 0.75; font-size: 10px; margin-left: -2px;">(' + totalStr + '/' + limitStr + ')</span>';
+    badgeText.innerHTML = svgIcon + '<span style="letter-spacing: -0.2px;">' + (isNew ? '0.0%' : pctStr) + '</span><span style="opacity: 0.75; font-size: 10px; margin-left: -2px;">(' + totalStr + '/' + limitStr + ')</span>';
 
     pill.title = '点击查看上下文详细指标与快捷操作';
 
@@ -492,15 +499,80 @@
     }
   }
 
+  let currentTrackedConvId = null;
+
+  function detectCurrentConversationId() {
+    // 1. 从 URL 路由提取 (/c/uuid, ?conversationId=uuid, targetRoute=c%2Fuuid 等)
+    try {
+      const href = window.location.href || '';
+      const m = href.match(/(?:c\/|conversationId=|[\?&]c%2F|targetRoute=c%2F)([0-9a-fA-F\-]{36})/);
+      if (m && m[1]) return m[1];
+    } catch (e) {}
+
+    // 2. 从 DOM 中引用的 brain/uuid 或 conversation:// 链接提取
+    try {
+      const brainEl = document.querySelector('[src*="/brain/"], [href*="/brain/"], [data-uri*="/brain/"], [title*="/brain/"]');
+      if (brainEl) {
+        const str = brainEl.src || brainEl.href || brainEl.getAttribute('data-uri') || brainEl.getAttribute('title') || '';
+        const m = str.match(/brain[\\\/]([0-9a-fA-F\-]{36})/);
+        if (m && m[1]) return m[1];
+      }
+
+      const convLink = document.querySelector('a[href^="conversation://"]');
+      if (convLink) {
+        const m = convLink.href.match(/conversation:\/\/([0-9a-fA-F\-]{36})/);
+        if (m && m[1]) return m[1];
+      }
+
+      const convAttrEl = document.querySelector('[data-conversation-id], [conversation-id]');
+      if (convAttrEl) {
+        const id = convAttrEl.getAttribute('data-conversation-id') || convAttrEl.getAttribute('conversation-id');
+        if (id && /^[0-9a-fA-F\-]{36}$/.test(id)) return id;
+      }
+    } catch (e) {}
+
+    // 3. 检查 localStorage
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (/conversation/i.test(k)) {
+          const v = localStorage.getItem(k);
+          const m = (v || '').match(/[0-9a-fA-F\-]{36}/);
+          if (m) return m[0];
+        }
+      }
+    } catch (e) {}
+
+    // 4. 检查是否为没有任何消息的全新空白会话
+    try {
+      const messages = document.querySelectorAll('div[data-message-id], div.message, div[role="article"], div[data-turn]');
+      if (messages.length === 0) {
+        const inputEl = document.querySelector('textarea, [contenteditable="true"]');
+        if (inputEl) return 'new';
+      }
+    } catch (e) {}
+
+    return null;
+  }
+
   function fetchContextData() {
     try {
-      fetch('http://127.0.0.1:23947/context')
+      const detectedId = detectCurrentConversationId();
+      let url = 'http://127.0.0.1:23947/context';
+      if (detectedId) {
+        url += '?convId=' + encodeURIComponent(detectedId);
+      }
+
+      fetch(url)
         .then(res => {
           if (!res.ok) throw new Error('status ' + res.status);
           return res.json();
         })
         .then(data => {
           if (data && data.totalContext !== undefined) {
+            if (data.convId && data.convId !== currentTrackedConvId) {
+              currentTrackedConvId = data.convId;
+            }
             renderPill(data);
           }
         })

@@ -160,11 +160,44 @@ class AntigravityContextMonitor {
           return;
         }
 
-        const url = req.url || '';
-        if (url.startsWith('/context')) {
+        const urlStr = req.url || '';
+        if (urlStr.startsWith('/context')) {
+          let responseData = null;
+          try {
+            const parsedUrl = new URL(urlStr, 'http://127.0.0.1:23947');
+            const requestedConvId = parsedUrl.searchParams.get('convId');
+
+            if (requestedConvId) {
+              responseData = this.getConversationData(requestedConvId);
+            }
+
+            if (!responseData) {
+              const wsConvId = this.getActiveWorkspaceConversationId();
+              if (wsConvId) {
+                responseData = this.getConversationData(wsConvId);
+              }
+            }
+          } catch (e) {}
+
+          if (!responseData) {
+            responseData = this.currentData || {
+              convId: 'new',
+              model: 'Gemini 3.8 Flash',
+              totalContext: 0,
+              maxLimit: 1048576,
+              percent: 0,
+              remaining: 1048576,
+              inputTokens: 0,
+              cacheTokens: 0,
+              outputTokens: 0,
+              isNew: true,
+              timestamp: new Date().toISOString()
+            };
+          }
+
           res.writeHead(200, headers);
-          res.end(JSON.stringify(this.currentData || { status: 'waiting', message: '等待对话产生数据' }));
-        } else if (url.startsWith('/action/compact')) {
+          res.end(JSON.stringify(responseData));
+        } else if (urlStr.startsWith('/action/compact')) {
           this.copyCompactCommand();
           res.writeHead(200, headers);
           res.end(JSON.stringify({ ok: true, message: '已复制 /compact' }));
@@ -225,6 +258,108 @@ class AntigravityContextMonitor {
     } catch (err) {
       return null;
     }
+  }
+
+  getConversationData(convId) {
+    if (!convId || convId === 'new') {
+      return {
+        convId: 'new',
+        model: 'Gemini 3.8 Flash',
+        totalContext: 0,
+        maxLimit: 1048576,
+        percent: 0,
+        remaining: 1048576,
+        inputTokens: 0,
+        cacheTokens: 0,
+        outputTokens: 0,
+        isNew: true,
+        timestamp: new Date().toISOString()
+      };
+    }
+
+    const tPath = path.join(this.brainDir, convId, '.system_generated', 'logs', 'transcript.jsonl');
+    if (!fs.existsSync(tPath)) {
+      return {
+        convId: convId,
+        model: 'Gemini 3.8 Flash',
+        totalContext: 0,
+        maxLimit: 1048576,
+        percent: 0,
+        remaining: 1048576,
+        inputTokens: 0,
+        cacheTokens: 0,
+        outputTokens: 0,
+        isNew: true,
+        timestamp: new Date().toISOString()
+      };
+    }
+
+    try {
+      const fileStat = fs.statSync(tPath);
+      const tokenData = this.parseLatestTokens(tPath);
+      if (!tokenData) {
+        return {
+          convId: convId,
+          model: 'Gemini 3.8 Flash',
+          totalContext: 0,
+          maxLimit: 1048576,
+          percent: 0,
+          remaining: 1048576,
+          inputTokens: 0,
+          cacheTokens: 0,
+          outputTokens: 0,
+          isNew: true,
+          timestamp: new Date().toISOString()
+        };
+      }
+
+      const maxLimit = getModelLimit(tokenData.model);
+      const totalContext = (tokenData.inputTokens || 0) + (tokenData.cacheTokens || 0) + (tokenData.outputTokens || 0);
+      const percent = maxLimit > 0 ? (totalContext / maxLimit) * 100 : 0;
+      const remaining = Math.max(0, maxLimit - totalContext);
+
+      return {
+        ...tokenData,
+        totalContext,
+        maxLimit,
+        percent,
+        remaining,
+        convId: convId,
+        fileMtime: fileStat.mtimeMs
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  getActiveWorkspaceConversationId() {
+    try {
+      const folders = vscode.workspace.workspaceFolders;
+      if (!folders || folders.length === 0) return null;
+      const activeFolderUri = folders[0].uri.toString();
+
+      const userStorage = path.join(os.homedir(), 'AppData', 'Roaming', 'Code', 'User', 'workspaceStorage');
+      if (!fs.existsSync(userStorage)) return null;
+
+      const subdirs = fs.readdirSync(userStorage);
+      for (const dir of subdirs) {
+        const wsJsonPath = path.join(userStorage, dir, 'workspace.json');
+        if (fs.existsSync(wsJsonPath)) {
+          try {
+            const wsContent = JSON.parse(fs.readFileSync(wsJsonPath, 'utf8'));
+            if (wsContent.folder && (wsContent.folder === activeFolderUri || wsContent.folder.toLowerCase() === activeFolderUri.toLowerCase())) {
+              const dbPath = path.join(userStorage, dir, 'state.vscdb');
+              if (fs.existsSync(dbPath)) {
+                const content = fs.readFileSync(dbPath).toString('latin1');
+                const m = content.match(/lastConversationId.*?([0-9a-fA-F\-]{36})/);
+                if (m && m[1]) return m[1];
+              }
+            }
+          } catch (e) {}
+        }
+      }
+    } catch (e) {}
+    return null;
   }
 
   parseLatestTokens(filePath) {
