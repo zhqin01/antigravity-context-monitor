@@ -2,7 +2,7 @@
   "name": "antigravity-context-monitor",
   "displayName": "Antigravity 上下文监控器",
   "description": "实时监控 VS Code Antigravity AI Agent 对话上下文 Token 占用与剩余量，支持状态栏显示、过载预警及一键压缩",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "publisher": "antigravity-community",
   "repository": {
     "type": "git",

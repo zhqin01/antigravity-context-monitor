@@ -499,17 +499,86 @@
     }
   }
 
-  let currentTrackedConvId = null;
+    let currentTrackedConvId = null;
+
+  function getActiveCascadeIdFromReact() {
+    try {
+      const candidates = [
+        document.querySelector('[data-testid="conversation-view"]'),
+        document.querySelector('textarea, [contenteditable="true"]'),
+        document.getElementById('root'),
+        document.body
+      ];
+      for (const el of candidates) {
+        if (!el) continue;
+        const key = Object.keys(el).find(k => k.startsWith('__reactFiber') || k.startsWith('__reactInternalInstance'));
+        if (!key) continue;
+        let fiber = el[key];
+        let depth = 0;
+        while (fiber && depth < 40) {
+          const props = fiber.memoizedProps;
+          if (props) {
+            if (props.cascadeId && typeof props.cascadeId === 'string') return props.cascadeId;
+            if (props.conversationId && typeof props.conversationId === 'string' && props.conversationId.length > 20) return props.conversationId;
+            if (props.activeConversationId && typeof props.activeConversationId === 'string') return props.activeConversationId;
+          }
+          fiber = fiber.return;
+          depth++;
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
 
   function detectCurrentConversationId() {
-    // 1. 从 URL 路由提取 (/c/uuid, ?conversationId=uuid, targetRoute=c%2Fuuid 等)
+    // 1. React Fiber 直接提取（最高优先级，最精准）
+    try {
+      const reactId = getActiveCascadeIdFromReact();
+      if (reactId) {
+        if (reactId === '_new' || reactId === 'newTab__empty') return 'new';
+        if (/^[0-9a-fA-F\-]{36}$/.test(reactId)) return reactId;
+      }
+    } catch (e) {}
+
+    // 2. DOM 属性探测: data-testid="conversation-view" 与 data-cascade-id
+    try {
+      const convView = document.querySelector('[data-testid="conversation-view"], [data-cascade-id]');
+      if (convView) {
+        const id = convView.dataset ? convView.dataset.cascadeId : convView.getAttribute('data-cascade-id');
+        if (id) {
+          if (id === '_new' || id === 'newTab__empty') return 'new';
+          if (/^[0-9a-fA-F\-]{36}$/.test(id)) return id;
+        }
+      }
+
+      const inputEl = document.querySelector('textarea, [contenteditable="true"]');
+      if (inputEl) {
+        const pane = inputEl.closest('[data-cascade-id], [data-testid="conversation-view"]');
+        if (pane) {
+          const id = pane.dataset ? pane.dataset.cascadeId : pane.getAttribute('data-cascade-id');
+          if (id === '_new' || id === 'newTab__empty') return 'new';
+          if (id && /^[0-9a-fA-F\-]{36}$/.test(id)) return id;
+        }
+      }
+    } catch (e) {}
+
+    // 3. 侧边栏/历史记录列表高亮项探测
+    try {
+      const activeRow = document.querySelector('[data-sidebar-row-id][aria-selected="true"], [data-sidebar-row-id].active, [data-sidebar-row-id].selected, [data-sidebar-row-id]:has(.bg-accent), [data-sidebar-row-id]:has([aria-current="page"])');
+      if (activeRow) {
+        const id = activeRow.getAttribute('data-sidebar-row-id');
+        if (id && /^[0-9a-fA-F\-]{36}$/.test(id)) return id;
+      }
+    } catch (e) {}
+
+    // 4. URL 路由提取 (/c/uuid, ?conversationId=uuid, targetRoute=c%2Fuuid 等)
     try {
       const href = window.location.href || '';
       const m = href.match(/(?:c\/|conversationId=|[\?&]c%2F|targetRoute=c%2F)([0-9a-fA-F\-]{36})/);
       if (m && m[1]) return m[1];
     } catch (e) {}
 
-    // 2. 从 DOM 中引用的 brain/uuid 或 conversation:// 链接提取
+    // 5. DOM 中引用的 brain/uuid 或 conversation:// 链接提取
     try {
       const brainEl = document.querySelector('[src*="/brain/"], [href*="/brain/"], [data-uri*="/brain/"], [title*="/brain/"]');
       if (brainEl) {
@@ -523,27 +592,9 @@
         const m = convLink.href.match(/conversation:\/\/([0-9a-fA-F\-]{36})/);
         if (m && m[1]) return m[1];
       }
-
-      const convAttrEl = document.querySelector('[data-conversation-id], [conversation-id]');
-      if (convAttrEl) {
-        const id = convAttrEl.getAttribute('data-conversation-id') || convAttrEl.getAttribute('conversation-id');
-        if (id && /^[0-9a-fA-F\-]{36}$/.test(id)) return id;
-      }
     } catch (e) {}
 
-    // 3. 检查 localStorage
-    try {
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (/conversation/i.test(k)) {
-          const v = localStorage.getItem(k);
-          const m = (v || '').match(/[0-9a-fA-F\-]{36}/);
-          if (m) return m[0];
-        }
-      }
-    } catch (e) {}
-
-    // 4. 检查是否为没有任何消息的全新空白会话
+    // 6. 检查是否为全新空白会话
     try {
       const messages = document.querySelectorAll('div[data-message-id], div.message, div[role="article"], div[data-turn]');
       if (messages.length === 0) {
@@ -606,6 +657,19 @@
   try {
     badgeObserver.observe(document.body, { childList: true, subtree: true });
   } catch (e) {}
+
+  
+  document.addEventListener('click', (e) => {
+    const row = e.target.closest('[data-sidebar-row-id]');
+    if (row) {
+      const id = row.getAttribute('data-sidebar-row-id');
+      if (id && /^[0-9a-fA-F\-]{36}$/.test(id) && id !== currentTrackedConvId) {
+        currentTrackedConvId = id;
+        lastData = null;
+        setTimeout(fetchContextData, 100);
+      }
+    }
+  }, true);
 
   console.log('[Antigravity Context Badge & Popover] Initialized successfully.');
 })();

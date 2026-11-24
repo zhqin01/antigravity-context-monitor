@@ -180,7 +180,7 @@ class AntigravityContextMonitor {
           } catch (e) {}
 
           if (!responseData) {
-            responseData = this.currentData || {
+            responseData = {
               convId: 'new',
               model: 'Gemini 3.8 Flash',
               totalContext: 0,
@@ -197,6 +197,17 @@ class AntigravityContextMonitor {
 
           res.writeHead(200, headers);
           res.end(JSON.stringify(responseData));
+        } else if (urlStr.startsWith('/report_debug')) {
+          let b = '';
+          req.on('data', chunk => b += chunk);
+          req.on('end', () => {
+            try {
+              fs.writeFileSync(path.join(os.tmpdir(), 'antigravity_webview_debug.json'), b, 'utf8');
+            } catch (e) {}
+            res.writeHead(200, headers);
+            res.end(JSON.stringify({ ok: true }));
+          });
+          return;
         } else if (urlStr.startsWith('/action/compact')) {
           this.copyCompactCommand();
           res.writeHead(200, headers);
