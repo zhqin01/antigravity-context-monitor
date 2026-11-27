@@ -5,20 +5,23 @@ const os = require('os');
 const http = require('http');
 
 /**
- * 常用模型上下文窗口上限字典 (Tokens)
+ * 实际可用上下文窗口上限字典 (Tokens)
+ * 必须按 Google Antigravity 宿主底座 (localharness) 真实的单会话活跃上限 (256,000 / 256k) 设定，
+ * 避免用户看到标称的 1M/2M 产生“容量还很大”的严重误判与不合理估计！
  */
 const MODEL_LIMITS = {
-  'gemini-3.8-flash': 1048576,
-  'gemini-3.8-flash-high': 1048576,
-  'gemini-2.5-flash': 1048576,
-  'gemini-2.5-pro': 2097152,
-  'gemini-3-pro': 2097152,
-  'gemini-1.5-pro': 2097152,
-  'gemini-1.5-flash': 1048576,
+  'gemini-3.8-flash': 256000,
+  'gemini-3.8-flash-high': 256000,
+  'gemini-2.5-flash': 256000,
+  'gemini-2.5-pro': 256000,
+  'gemini-3-pro': 256000,
+  'gemini-1.5-pro': 256000,
+  'gemini-1.5-flash': 256000,
   'claude-3-5-sonnet': 200000,
   'claude-3-7-sonnet': 200000,
   'claude-3-opus': 200000,
   'claude-3-haiku': 200000,
+  'claude-1m': 840000,
   'gpt-4o': 128000,
   'gpt-4-turbo': 128000,
   'o1': 200000,
@@ -26,16 +29,15 @@ const MODEL_LIMITS = {
 };
 
 function getModelLimit(model) {
-  if (!model) return 1048576;
+  if (!model) return 256000;
   const m = model.toLowerCase();
   for (const [k, v] of Object.entries(MODEL_LIMITS)) {
     if (m.includes(k)) return v;
   }
-  if (m.includes('pro')) return 2097152;
+  if (m.includes('claude-1m')) return 840000;
   if (m.includes('claude')) return 200000;
   if (m.includes('gpt-4')) return 128000;
-  if (m.includes('flash')) return 1048576;
-  return 1048576;
+  return 256000; // 所有 Gemini 系列在 Antigravity 宿主中的实际活跃上限均为 256k
 }
 
 function formatTokens(num) {

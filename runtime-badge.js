@@ -273,10 +273,10 @@
       <!-- 模型与会话状态 -->
       <div style="display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; color: #94a3b8; margin-bottom: 3px; gap: 8px;">
         <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">模型: <strong style="color: #f1f5f9; font-weight: 500;">${modelClean}</strong></span>
-        <span style="flex-shrink: 0; white-space: nowrap;">已用: <strong style="color: ${statusColor}; font-weight: 600;">${isNew ? '0.0%' : pctStr}</strong></span>
+        <span style="flex-shrink: 0; white-space: nowrap;">真实占用: <strong style="color: ${statusColor}; font-weight: 600;">${isNew ? '0.0%' : pctStr}</strong></span>
       </div>
-      <div style="display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: #64748b; margin-bottom: 6px; gap: 8px;">
-        <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">会话: <strong style="color: #94a3b8; font-weight: 400;">${convIdDisplay}</strong></span>
+      <div style="display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: #64748b; margin-bottom: 5px; gap: 8px;">
+        <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">真实活跃上限: <strong style="color: #38bdf8; font-weight: 500;">${formatK(data.maxLimit)}</strong> (防误判)</span>
         ${isNew ? '<span style="color: #10b981; font-weight: 500; flex-shrink: 0;">准备就绪</span>' : ''}
       </div>
 
@@ -431,6 +431,16 @@
 
   function renderPill(data) {
     if (!data || data.totalContext === undefined) return;
+
+    // 强制纠正上限为 Google Antigravity 底座宿主真实单会话活跃上限 (256k)
+    // 避免因为界面标称 1M 导致用户产生严重错误估计
+    const REAL_HOST_CAPACITY = 256000;
+    if (data.maxLimit > REAL_HOST_CAPACITY && (!data.model || !data.model.includes('claude-1m'))) {
+      data.nominalLimit = data.maxLimit;
+      data.maxLimit = REAL_HOST_CAPACITY;
+      data.percent = Math.min(100, (data.totalContext / REAL_HOST_CAPACITY) * 100);
+      data.remaining = Math.max(0, REAL_HOST_CAPACITY - data.totalContext);
+    }
     lastData = data;
 
     const modelSelector = findModelSelector();
